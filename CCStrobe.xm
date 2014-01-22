@@ -11,45 +11,83 @@
 	SBControlCenterButton *_torchButton;
 }
 
--(id)init;
--(void)_enableTorch:(BOOL)torch;
+- (id)init;
 @end
 
 @interface SBCCQuickLaunchSectionController (CCStrobe)
--(void)ccstrobe_strobe;
+-(void)ccstrobe_longPressEvent:(UILongPressGestureRecognizer *)sender;
+-(void)ccstrobe_setupStrobe:(AVCaptureDevice *)light withSession:(AVCaptureSession *)session;
+-(void)ccstrobe_beginStrobing:(AVCaptureDevice *)light;
+-(void)ccstrobe_toggleStrobe:(AVCaptureDevice *)light;
+-(void)ccstrobe_toggleStrobe:(AVCaptureDevice *)light state:(BOOL)state;
 @end
 
 %hook SBCCQuickLaunchSectionController
-static char * kCCStrobeHitOnce;
-static char * kCCStrobeHitTwice;
-static char * kCCStrobeShouldStrobe;
+static char * kCCStrobeSwitchKey;
 
--(void)_enableTorch:(BOOL)torch{
+- (void)viewWillAppear:(BOOL)view{
 	%orig();
 
-	if([objc_getAssociatedObject(self, &kCCStrobeHitOnce) boolValue]){
-		objc_setAssociatedObject(self, &kCCStrobeHitOnce, @(NO), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-		objc_setAssociatedObject(self, &kCCStrobeHitTwice, @(YES), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-	}
-
-	else
-		objc_setAssociatedObject(self, &kCCStrobeHitOnce, @(YES), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-
-	dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^(void){
-		if([objc_getAssociatedObject(self, &kCCStrobeHitTwice) boolValue]){
-			objc_setAssociatedObject(self, &kCCStrobeShouldStrobe, @(![objc_getAssociatedObject(self, &kCCStrobeShouldStrobe) boolValue]), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-			[self ccstrobe_strobe];
-		}
-	});
+	SBControlCenterButton *torchButton = MSHookIvar<SBControlCenterButton *>(self, "_torchButton");
+	UILongPressGestureRecognizer *press = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(ccstrobe_longPressEvent:)];
+	[torchButton addGestureRecognizer:press];
 }
 
-%new -(void)ccstrobe_strobe{
-	if(![objc_getAssociatedObject(self, &kCCStrobeShouldStrobe) boolValue])
-		return;
+%new -(void)ccstrobe_longPressEvent:(UILongPressGestureRecognizer *)sender{
+	if(sender.state == UIGestureRecognizerStateBegan){
+		NSLog(@"[CCStrobe] Recognized long press on Torch button, starting strobe");
+		AVCaptureDevice *captureDevice = [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeVideo];
+		AVCaptureSession *captureSession = [[AVCaptureSession alloc] init];
+		[self ccstrobe_setupStrobe:captureDevice withSession:captureSession];
+	
+		objc_setAssociatedObject(self, &kCCStrobeSwitchKey, @(YES), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+		[self ccstrobe_beginStrobing:captureDevice];
+	}
 
-	dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.025 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^(void){
-		[self _enableTorch:!(MSHookIvar<BOOL>(self, "_flashlightOn"))];
-		[self ccstrobe_strobe];
-	});
+	else if(sender.state == UIGestureRecognizerStateEnded){
+		NSLog(@"[CCStrobe] Recognized lift off of the Torch button, ending possible strobe");
+		objc_setAssociatedObject(self, &kCCStrobeSwitchKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+	}
+}
+	
+%new -(void)ccstrobe_setupStrobe:(AVCaptureDevice *)light withSession:(AVCaptureSession *)session{
+	[session beginConfiguration];
+	
+	if([light hasTorch] && [light hasFlash]){
+		AVCaptureDeviceInput *deviceInput = [AVCaptureDeviceInput deviceInputWithDevice:light error:nil];
+		
+		if(deviceInput)
+			[session addInput:deviceInput];
+		
+		AVCaptureVideoDataOutput *dataOut = [[AVCaptureVideoDataOutput alloc] init];
+		[session addOutput:dataOut];
+		[session commitConfiguration];
+		[session startRunning];
+	}
+}
+
+%new -(void)ccstrobe_beginStrobing:(AVCaptureDevice *)light{
+	if(!objc_getAssociatedObject(self, &kCCStrobeSwitchKey))
+		[self ccstrobe_toggleStrobe:light state:NO];
+	
+	else{
+		dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.025 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^(void){
+			[self ccstrobe_toggleStrobe:light];
+			[self ccstrobe_beginStrobing:light];
+		});
+	}
+}
+
+%new -(void)ccstrobe_toggleStrobe:(AVCaptureDevice *)light{
+	[self ccstrobe_toggleStrobe:light state:!light.torchActive];
+}
+
+%new -(void)ccstrobe_toggleStrobe:(AVCaptureDevice *)light state:(BOOL)state{
+	[light lockForConfiguration:nil];
+	
+	[light setTorchMode:state];
+	[light setFlashMode:state];
+	
+	[light unlockForConfiguration];
 }
 %end
