@@ -18,6 +18,23 @@
 -(void)ccstrobe_toggleStrobe:(AVCaptureDevice *)light state:(BOOL)state;
 @end
 
+@interface SBCCQuickLaunchSectionController{
+    SBControlCenterButton *_torchButton;
+}
+
+@property(assign, nonatomic, getter=isFlashlightOn) BOOL flashlightOn;
+-(id)init;
+-(void)buttonTapped:(SBControlCenterButton *)tapped;
+@end
+
+%hook SBCCQuickLaunchSectionController
+-(void)buttonTapped:(SBControlCenterButton *)tapped{
+	NSLog(@"---- tapped!");
+	%log;
+	%orig();
+}
+%end
+
 %hook SBControlCenterButton
 static char * kCCStrobeSwitchKey;
 
@@ -29,6 +46,12 @@ static char * kCCStrobeSwitchKey;
 		UILongPressGestureRecognizer *press = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(ccstrobe_longPressEvent:)];
 		[self addGestureRecognizer:press];
 	}
+}
+
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event{
+	NSLog(@"----- hittest");
+	%log;
+	return %orig();
 }
 
 %new -(void)ccstrobe_longPressEvent:(UILongPressGestureRecognizer *)sender{
@@ -46,6 +69,9 @@ static char * kCCStrobeSwitchKey;
 		NSLog(@"[CCStrobe] Recognized lift off of the Torch button, ending possible strobe");
 		objc_setAssociatedObject(self, &kCCStrobeSwitchKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 	}
+
+	else
+		NSLog(@"[CCStrobe] Recognized spurious input on Torch button, ignoring");
 }
 	
 %new -(void)ccstrobe_setupStrobe:(AVCaptureDevice *)light withSession:(AVCaptureSession *)session{
