@@ -4,11 +4,13 @@
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 
-@interface SBCCButtonLayoutView : UIView
--(void)addButton:(id)button;
+@interface SBControlCenterButton : UIButton
+@property(copy, nonatomic) NSString *identifier;
+@property(copy, nonatomic) NSNumber *sortKey;
+-(void)dealloc;
 @end
 
-@interface SBCCButtonLayoutView (CCStrobe)
+@interface SBControlCenterButton (CCStrobe)
 -(void)ccstrobe_longPressEvent:(UILongPressGestureRecognizer *)sender;
 -(void)ccstrobe_setupStrobe:(AVCaptureDevice *)light withSession:(AVCaptureSession *)session;
 -(void)ccstrobe_beginStrobing:(AVCaptureDevice *)light;
@@ -16,21 +18,17 @@
 -(void)ccstrobe_toggleStrobe:(AVCaptureDevice *)light state:(BOOL)state;
 @end
 
-%hook SBCCButtonLayoutView
+%hook SBControlCenterButton
 static char * kCCStrobeSwitchKey;
 
--(void)addButton:(id)button{
-	if(![button valueForKey:@"identifier"] && [[button valueForKey:@"sortKey"] intValue] == 1){
-		NSLog(@"[CCStrobe] Adding long press recognizer to Torch button");
+-(void)setSortKey:(NSNumber *)number{	
+	%orig();
 
-		UIButton *torch = (UIButton *)button;
+	if(!self.identifier && [number intValue] == 1){
+		NSLog(@"[CCStrobe] Adding long press recognizer to Torch button (%@)", self);
 		UILongPressGestureRecognizer *press = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(ccstrobe_longPressEvent:)];
-		[torch addGestureRecognizer:press];
-		%orig(torch);
+		[self addGestureRecognizer:press];
 	}
-
-	else
-		%orig();
 }
 
 %new -(void)ccstrobe_longPressEvent:(UILongPressGestureRecognizer *)sender{
