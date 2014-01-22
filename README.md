@@ -1,7 +1,7 @@
 CCStrobe
 =======================
 
-Strobe by holding down the Torch launch (because the other didn't work for me).
+Strobe by double-tapping the Torch quick-launch button (because the other didn't work for me).
 
 ---------------------------------------	
 [Creative Commons Attribution-NonCommercial 3.0 United States License](http://creativecommons.org/licenses/by-nc/3.0/us/) as of 2014:
