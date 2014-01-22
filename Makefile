@@ -5,7 +5,7 @@ include theos/makefiles/common.mk
 
 TWEAK_NAME = CCStrobe
 CCStrobe_OBJC_FILES = CCStrobe.xm
-CCStrobe_FRAMEWORKS = UIKit AVFoundation
+CCStrobe_FRAMEWORKS = UIKit AVFoundation CoreGraphics
 CCStrobe_CFLAGS = -fobjc-arc
 
 include $(THEOS_MAKE_PATH)/tweak.mk
