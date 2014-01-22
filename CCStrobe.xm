@@ -5,9 +5,6 @@
 #import <AVFoundation/AVFoundation.h>
 #import "CydiaSubstrate.h"
 
-@interface NSDistributedNotificationCenter : NSNotificationCenter
-@end
-
 @interface SBControlCenterButton : UIButton
 @property(copy, nonatomic) NSString *identifier;
 @property(copy, nonatomic) NSNumber *sortKey;
@@ -21,41 +18,13 @@
 @end
 
 @interface SBControlCenterContainerView (CCStrobe)
+-(void)ccstrobe_disableStrobe;
 -(void)ccstrobe_longPressEvent:(CCTControlCenterButton *)button;
 -(void)ccstrobe_setupStrobe:(AVCaptureDevice *)light withSession:(AVCaptureSession *)session;
 -(void)ccstrobe_beginStrobing:(AVCaptureDevice *)light;
 -(void)ccstrobe_toggleStrobe:(AVCaptureDevice *)light;
 -(void)ccstrobe_toggleStrobe:(AVCaptureDevice *)light state:(BOOL)state;
 @end
-
-@interface SBCCQuickLaunchSectionController
--(void)_enableTorch:(BOOL)torch;
-@end
-
-@interface SBCCQuickLaunchSectionController (CCStrobe)
--(void)ccstrobe_overrideEnable:(NSNotification *)notification;
-@end
-
-%hook SBCCQuickLaunchSectionController
-static char * kCCStrobeShouldOverrideKey;
-
--(id)init{
-	SBCCQuickLaunchSectionController *c = %orig();
-	[[NSDistributedNotificationCenter defaultCenter] addObserver:c selector:@selector(ccstrobe_overrideEnable:) name:@"CCStrobeChangeOverride" object:nil];
-	return c;
-}
-
-%new -(void)ccstrobe_overrideEnable:(NSNotification *)notification{
-	objc_setAssociatedObject(self, &kCCStrobeShouldOverrideKey, [[notification userInfo] objectForKey:@"shouldOverride"], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-}
-
--(void)_enableTorch:(BOOL)torch{
-	if([objc_getAssociatedObject(self, &kCCStrobeShouldOverrideKey) boolValue])
-		%orig(YES);
-	else
-		%orig();
-}
-%end
 
 %hook SBControlCenterContainerView
 static char * kCCStrobeSwitchKey;
@@ -67,6 +36,11 @@ static char * kCCStrobeSwitchKey;
 		if([[o valueForKey:@"identifier"] isEqualToString:@"com.apple.controlcenter.quicklaunch.torch"]){
 			NSLog(@"[CCStrobe] Detected tap on Torch button, waiting for long press...");
 			dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^(void){
+				UIButton *replacement = [UIButton buttonWithType:UIButtonTypeRoundedRect];
+				[replacement addTarget:self action:@selector(ccstrobe_disableStrobe) forControlEvents:UIControlEventTouchUpInside];
+				[self addSubview:replacement];
+				[replacement setFrame:o.frame];
+
 				[self ccstrobe_longPressEvent:(CCTControlCenterButton*)o];
 			});
 		}
@@ -75,20 +49,16 @@ static char * kCCStrobeSwitchKey;
 	return %orig();
 }
 
-%new -(void)ccstrobe_longPressEvent:(CCTControlCenterButton *)button{
-	if([objc_getAssociatedObject(self, &kCCStrobeSwitchKey) boolValue]){
-		NSLog(@"[CCStrobe] Recognized secondary long press on Torch button, ending strobe");
-	
-		[[NSDistributedNotificationCenter defaultCenter] postNotificationName:@"CCStrobeChangeOverride" object:nil userInfo:@{@"shouldOverride" : @(NO)}];
-		objc_setAssociatedObject(self, &kCCStrobeSwitchKey, @(NO), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-	}
+%new -(void)ccstrobe_disableStrobe{
+	NSLog(@"[CCStrobe] Recognized secondary long press on Torch button, ending strobe");
+	objc_setAssociatedObject(self, &kCCStrobeSwitchKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
 
-	else if(button.selected){
+%new -(void)ccstrobe_longPressEvent:(CCTControlCenterButton *)button{
+	if(button.selected){
 		NSLog(@"[CCStrobe] Recognized long press on Torch button, starting strobe");
 		
-		[[NSDistributedNotificationCenter defaultCenter] postNotificationName:@"CCStrobeChangeOverride" object:nil userInfo:@{@"shouldOverride" : @(YES)}];
 		objc_setAssociatedObject(self, &kCCStrobeSwitchKey, @(YES), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-
 		AVCaptureDevice *captureDevice = [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeVideo];
 		AVCaptureSession *captureSession = [[AVCaptureSession alloc] init];
 		[self ccstrobe_setupStrobe:captureDevice withSession:captureSession];
@@ -113,11 +83,8 @@ static char * kCCStrobeSwitchKey;
 }
 
 %new -(void)ccstrobe_beginStrobing:(AVCaptureDevice *)light{
-	if(!objc_getAssociatedObject(self, &kCCStrobeSwitchKey)){
+	if(!objc_getAssociatedObject(self, &kCCStrobeSwitchKey))
 		[self ccstrobe_toggleStrobe:light state:NO];
-		objc_setAssociatedObject(self, &kCCStrobeSwitchKey, @(NO), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-
-	}
 	
 	else{
 		dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.025 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^(void){
